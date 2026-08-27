@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  visionnav:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: visionnav_app
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend/models:/app/backend/models
+    devices:
+      - "/dev/video0:/dev/video0" # Passthrough webcam hardware if available
+    restart: unless-stopped

@@ -1,0 +1,62 @@
+app:
+  name: "VisionNav"
+  version: "1.0.0"
+  environment: "development"
+  default_mode: "simulation" # Options: simulation, camera_test, full_navigation
+
+camera:
+  device: 0
+  width: 640
+  height: 480
+  target_fps: 15
+  frame_skip: 1
+
+detection:
+  model_path: "backend/models/yolov8n.pt"
+  confidence: 0.45
+  device: "cpu"
+  classes:
+    - person
+    - car
+    - bicycle
+    - motorcycle
+    - bus
+    - truck
+    - dog
+    - chair
+    - table
+    - backpack
+    - suitcase
+    - traffic light
+    - stop sign
+    - bottle
+    - bench
+
+distance:
+  warning_distance: 2.0
+  critical_distance: 1.0
+  focal_length_px: 500.0 # Standard approximate focal length for 640 width camera
+
+safe_path:
+  zones:
+    left_ratio: 0.33
+    center_ratio: 0.34
+    right_ratio: 0.33
+  blocked_area_threshold: 0.25 # Ratio of zone covered by object to mark it blocked
+
+navigation:
+  deviation_threshold_meters: 15.0
+  route_profile: "walking"
+  osrm_server: "http://router.project-osrm.org"
+  nominatim_server: "https://nominatim.openstreetmap.org"
+
+voice:
+  enabled: true
+  cooldown_seconds: 3.0
+  engine: "web_speech" # Options: web_speech, piper, pyttsx3
+  vosk_model_path: "backend/models/vosk-model-small-en-us"
+  piper_model_path: "backend/models/en_US-lessac-medium.onnx"
+
+logging:
+  level: "INFO"
+  format: "json"

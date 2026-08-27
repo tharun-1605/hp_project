@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VisionNav — AI Navigation Assistant</title>
+
+  <!-- High-contrast styling -->
+  <link rel="stylesheet" href="/static/css/style.css">
+
+  <!-- Leaflet OpenStreetMap CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+  <header role="banner" class="header">
+    <div class="logo-container">
+      <h1 class="app-title">VISION<span class="highlight">NAV</span></h1>
+      <span class="tagline">Open-Source AI Navigation Assistant</span>
+    </div>
+    <div class="mode-selector">
+      <label for="modeSelect" class="sr-only">Select System Operating Mode</label>
+      <select id="modeSelect" aria-label="Select Operating Mode">
+        <option value="simulation" selected>Mode 1: Simulation Mode</option>
+        <option value="camera_test">Mode 2: Camera Test Mode</option>
+        <option value="full_navigation">Mode 3: Full Navigation Mode</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- Safety Warning Disclaimer -->
+  <section class="disclaimer-banner" role="region" aria-label="Safety Disclaimer">
+    <p><strong>[!] ASSISTIVE PROTOTYPE:</strong> Distance estimates are approximate. Always use traditional mobility aids and stay alert.</p>
+  </section>
+
+  <main class="dashboard-grid" role="main">
+    <!-- Active Instruction Header Banner -->
+    <section class="instruction-banner" id="instructionCard" role="alert" aria-live="assertive">
+      <h2 class="section-label">CURRENT VOICE INSTRUCTION</h2>
+      <div id="activeInstruction" class="instruction-text">System Initialized. Ready for voice command.</div>
+      <div id="riskBadge" class="risk-badge risk-low">RISK: LOW</div>
+    </section>
+
+    <!-- Voice Control Panel -->
+    <section class="panel control-panel" aria-label="Voice Controls">
+      <h2 class="panel-title">Voice Commands</h2>
+      <form id="commandForm" class="command-form">
+        <input type="text" id="commandInput" placeholder="e.g. Navigate to Railway Station" aria-label="Voice command text input">
+        <button type="submit" id="btnSpeak" class="btn btn-primary" aria-label="Submit Voice Command">SEND COMMAND</button>
+        <button type="button" id="btnMic" class="btn btn-mic" aria-label="Speak voice command using microphone">🎤 MIC</button>
+      </form>
+
+      <div class="quick-buttons">
+        <button class="btn btn-action" onclick="sendQuickCommand('Navigate to Railway Station')">Station</button>
+        <button class="btn btn-action" onclick="sendQuickCommand('Navigate to College')">College</button>
+        <button class="btn btn-action" onclick="sendQuickCommand('Navigate to Hospital')">Hospital</button>
+        <button class="btn btn-action" onclick="sendQuickCommand('Where am I?')">Where Am I?</button>
+        <button class="btn btn-action" onclick="sendQuickCommand('Repeat')">Repeat</button>
+        <button class="btn btn-danger" onclick="stopNav()">STOP NAV</button>
+      </div>
+    </section>
+
+    <!-- Video Camera Feed -->
+    <section class="panel vision-panel" aria-label="Realtime Camera Feed">
+      <h2 class="panel-title">Vision & Corridor Analysis</h2>
+      <div class="video-container">
+        <img id="videoFeed" src="" alt="Real-time annotated camera stream with object detection bounding boxes" />
+        <div id="videoPlaceholder" class="video-placeholder">Connecting to live camera feed...</div>
+      </div>
+      <div class="corridor-status">
+        <div class="corridor-box" id="corridorLeft">LEFT: SAFE</div>
+        <div class="corridor-box" id="corridorCenter">CENTER: SAFE</div>
+        <div class="corridor-box" id="corridorRight">RIGHT: SAFE</div>
+      </div>
+    </section>
+
+    <!-- Map & GPS Telemetry Panel -->
+    <section class="panel map-panel" aria-label="OpenStreetMap View">
+      <h2 class="panel-title">OpenStreetMap Route</h2>
+      <div id="map" class="map-container"></div>
+      <div class="telemetry-bar">
+        <div><strong>GPS:</strong> <span id="gpsCoord">11.0025, 76.9620</span></div>
+        <div><strong>Speed:</strong> <span id="gpsSpeed">1.2 m/s</span></div>
+        <div><strong>Dest:</strong> <span id="navDest">None</span></div>
+        <div><strong>Distance:</strong> <span id="navDist">0 m</span></div>
+      </div>
+    </section>
+
+    <!-- Detected Objects List -->
+    <section class="panel objects-panel" aria-label="Detected Objects">
+      <h2 class="panel-title">Detected Objects (<span id="objCount">0</span>)</h2>
+      <ul id="objectsList" class="objects-list" aria-live="polite">
+        <li class="empty-msg">No objects detected nearby.</li>
+      </ul>
+    </section>
+  </main>
+
+  <script src="/static/js/map.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
