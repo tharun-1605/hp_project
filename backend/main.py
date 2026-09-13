@@ -10,6 +10,7 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
@@ -23,6 +24,7 @@ from backend.utils.logger import get_logger
 from backend.vision.camera_manager import CameraManager
 from backend.vision.object_detector import ObjectDetector
 from backend.vision.distance_estimator import DistanceEstimator
+from backend.vision.temporal_tracker import TemporalTracker
 from backend.vision.safe_path import SafePathDetector
 from backend.vision.risk_analyzer import RiskAnalyzer
 from backend.navigation.gps_manager import GPSManager
@@ -39,10 +41,30 @@ logger = get_logger("VisionNavMain")
 # Load configuration settings
 settings = load_settings()
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info(f"Starting VisionNav system in '{current_mode}' mode...")
+    camera_mgr.start()
+    voice_mgr.speak("VisionNav system initialized. Ready for navigation.", priority="HIGH")
+    yield
+    logger.info("Shutting down VisionNav system...")
+    camera_mgr.stop()
+
 app = FastAPI(
     title=settings["app"]["name"],
     version=settings["app"]["version"],
-    description="Open-Source AI Navigation Assistant for Visually Impaired People"
+    description="Open-Source AI Navigation Assistant for Visually Impaired People",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize core system modules
@@ -58,6 +80,7 @@ detector = ObjectDetector(
     device=settings["detection"]["device"]
 )
 distance_estimator = DistanceEstimator(focal_length_px=settings["distance"]["focal_length_px"])
+temporal_tracker = TemporalTracker()
 safe_path_detector = SafePathDetector(
     warning_distance=settings["distance"]["warning_distance"],
     critical_distance=settings["distance"]["critical_distance"]
@@ -88,18 +111,17 @@ class CommandRequest(BaseModel):
 class DestinationRequest(BaseModel):
     destination: str
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info(f"Starting VisionNav system in '{current_mode}' mode...")
-    camera_mgr.start()
-    voice_mgr.speak("VisionNav system initialized. Ready for navigation.", priority="HIGH")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Shutting down VisionNav system...")
-    camera_mgr.stop()
+class FrameUploadRequest(BaseModel):
+    frame_b64: str
 
 # --- REST API Endpoints ---
+
+@app.post("/api/camera/frame")
+def upload_camera_frame(req: FrameUploadRequest):
+    success = camera_mgr.push_external_frame(req.frame_b64)
+    if success:
+        return {"status": "success", "source": "phone_camera"}
+    raise HTTPException(status_code=400, detail="Failed to process camera frame.")
 
 @app.get("/api/status")
 def get_status():
@@ -250,11 +272,14 @@ async def websocket_telemetry(websocket: WebSocket):
             curr_gps = gps_mgr.get_location()
             route_status = route_tracker.update_position(curr_gps["latitude"], curr_gps["longitude"])
 
-            # Camera & Vision processing
+            # Camera & Vision processing with WOTR + COCO YOLO models
             _, frame = camera_mgr.read_frame()
+            h, w, _ = frame.shape
             detections = detector.detect(frame)
-            enriched_detections = distance_estimator.enrich_detections_with_distance(detections, frame.shape[0])
-            safe_path_analysis = safe_path_detector.analyze_safe_path(enriched_detections, frame.shape[1], frame.shape[0])
+
+            enriched_detections = distance_estimator.enrich_detections_with_distance(detections, h)
+            tracked_detections = temporal_tracker.update(enriched_detections)
+            safe_path_analysis = safe_path_detector.analyze_safe_path(tracked_detections, w, h)
             risk_analysis = risk_analyzer.evaluate_risk(safe_path_analysis)
 
             # Decision Engine synthesis
@@ -265,9 +290,9 @@ async def websocket_telemetry(websocket: WebSocket):
                 decision_engine.last_spoken_instruction = decision["instruction"]
                 voice_mgr.speak(decision["instruction"], priority=decision.get("priority", "MEDIUM"))
 
-            # Draw bounding boxes & corridors on visual frame for web UI
+            # Draw bounding boxes & corridors on visual frame for web/mobile UI
             annotated_frame = _annotate_frame(frame, enriched_detections, safe_path_analysis, risk_analysis)
-            _, buffer = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+            _, buffer = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 45])
             frame_b64 = base64.b64encode(buffer).decode("utf-8")
 
             telemetry_packet = {
@@ -286,7 +311,7 @@ async def websocket_telemetry(websocket: WebSocket):
             latest_telemetry = telemetry_packet
 
             await websocket.send_json(telemetry_packet)
-            await asyncio.sleep(0.15) # ~6-7 telemetry FPS stream
+            await asyncio.sleep(0.05) # ~15-20 smooth FPS stream
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected.")
     except Exception as e:
@@ -345,4 +370,17 @@ def serve_frontend():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    import socket
+
+    def find_free_port(start_port: int = 8000, max_port: int = 8010) -> int:
+        for p in range(start_port, max_port):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(("0.0.0.0", p)) != 0:
+                    return p
+        return start_port
+
+    target_port = find_free_port(8000)
+    print(f"\n========================================================")
+    print(f" VisionNav Server starting on http://localhost:{target_port}")
+    print(f"========================================================\n")
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=target_port, reload=True)

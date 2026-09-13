@@ -21,6 +21,8 @@ class CameraManager:
         self.start_time = time.time()
         self.current_fps = 0.0
         self.use_simulation = False
+        self.latest_external_frame: Optional[np.ndarray] = None
+        self.latest_external_time: float = 0.0
 
     def start(self) -> bool:
         """Initialize camera device or fallback to synthetic simulation."""
@@ -41,10 +43,32 @@ class CameraManager:
         self.is_running = True
         return True
 
+    def push_external_frame(self, frame_b64: str) -> bool:
+        """Receive base64 JPEG frame from external mobile device back camera."""
+        try:
+            import base64
+            img_bytes = base64.b64decode(frame_b64)
+            nparr = np.frombuffer(img_bytes, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is not None:
+                if frame.shape[1] != self.width or frame.shape[0] != self.height:
+                    frame = cv2.resize(frame, (self.width, self.height))
+                self.latest_external_frame = frame
+                self.latest_external_time = time.time()
+                return True
+        except Exception as e:
+            logger.error(f"Error processing external frame: {e}")
+        return False
+
     def read_frame(self) -> Tuple[bool, np.ndarray]:
-        """Read and resize a single frame from camera or synthetic generator."""
+        """Read and resize a single frame from phone camera, laptop camera, or synthetic generator."""
         if not self.is_running:
             return False, self._create_blank_frame()
+
+        # Prioritize recent external phone camera frame (< 2.5s old)
+        if self.latest_external_frame is not None and (time.time() - self.latest_external_time) < 2.5:
+            self._update_fps()
+            return True, self.latest_external_frame.copy()
 
         if self.use_simulation or not self.cap or not self.cap.isOpened():
             frame = self._generate_synthetic_frame()

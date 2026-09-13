@@ -1,4 +1,6 @@
 """Unit tests for CameraManager and ObjectDetector."""
+import base64
+import cv2
 import numpy as np
 import pytest
 from backend.vision.camera_manager import CameraManager
@@ -12,6 +14,22 @@ def test_camera_manager_simulation():
     ret, frame = cam.read_frame()
     assert ret is True
     assert isinstance(frame, np.ndarray)
+    assert frame.shape == (480, 640, 3)
+    cam.stop()
+
+def test_camera_manager_push_external_frame():
+    cam = CameraManager(width=640, height=480, target_fps=15)
+    cam.start()
+
+    dummy_img = np.ones((480, 640, 3), dtype=np.uint8) * 128
+    _, buffer = cv2.imencode('.jpg', dummy_img)
+    b64_str = base64.b64encode(buffer).decode('utf-8')
+
+    success = cam.push_external_frame(b64_str)
+    assert success is True
+
+    ret, frame = cam.read_frame()
+    assert ret is True
     assert frame.shape == (480, 640, 3)
     cam.stop()
 

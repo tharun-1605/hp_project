@@ -26,15 +26,28 @@ class ObjectDetector:
         self._init_model()
 
     def _init_model(self):
-        """Initialize Ultralytics YOLO or OpenCV DNN / heuristic fallback."""
+        """Initialize Ultralytics WOTR YOLO and optional COCO model."""
         try:
             from ultralytics import YOLO
-            if not os.path.exists(self.model_path) and not self.model_path.startswith("yolov8"):
-                logger.info(f"YOLO model file {self.model_path} not found locally. Will use 'yolov8n.pt'")
-                self.model_path = "yolov8n.pt"
+            wotr_path = "backend/models/wotr_yolov8.pt"
+            coco_path = "yolov8n.pt"
 
-            logger.info(f"Loading YOLO model: {self.model_path}")
-            self.model = YOLO(self.model_path)
+            if os.path.exists(wotr_path):
+                logger.info(f"Loading primary WOTR YOLO model: {wotr_path}")
+                self.model = YOLO(wotr_path)
+            elif os.path.exists(self.model_path):
+                logger.info(f"Loading YOLO model: {self.model_path}")
+                self.model = YOLO(self.model_path)
+            else:
+                logger.info("Loading default YOLO model: yolov8n.pt")
+                self.model = YOLO("yolov8n.pt")
+
+            if os.path.exists(coco_path) and self.model_path != coco_path:
+                logger.info("Loading secondary COCO YOLO model for indoor object detection...")
+                self.coco_model = YOLO(coco_path)
+            else:
+                self.coco_model = None
+
             logger.info("YOLO object detector initialized successfully.")
             return
         except Exception as e:
@@ -50,29 +63,58 @@ class ObjectDetector:
             return self._detect_simulated(frame)
 
         try:
-            results = self.model(frame, conf=self.confidence, verbose=False)
             detections = []
-            for result in results:
-                boxes = result.boxes
-                for box in boxes:
+            # Run primary WOTR model
+            results_primary = self.model(frame, conf=self.confidence, verbose=False)
+            for result in results_primary:
+                for box in result.boxes:
                     cls_id = int(box.cls[0].item())
                     class_name = result.names.get(cls_id, f"class_{cls_id}")
-
                     conf = float(box.conf[0].item())
                     xyxy = box.xyxy[0].tolist()
                     x1, y1, x2, y2 = [int(v) for v in xyxy]
-
-                    center_x = int((x1 + x2) / 2)
-                    center_y = int((y1 + y2) / 2)
+                    cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
 
                     detections.append({
                         "class": class_name,
                         "confidence": round(conf, 2),
                         "bbox": [x1, y1, x2, y2],
-                        "center": [center_x, center_y],
+                        "center": [cx, cy],
                         "width": x2 - x1,
                         "height": y2 - y1
                     })
+
+            # Run secondary COCO model if available for indoor objects not in primary
+            if self.coco_model is not None:
+                results_secondary = self.coco_model(frame, conf=self.confidence, verbose=False)
+                for result in results_secondary:
+                    for box in result.boxes:
+                        cls_id = int(box.cls[0].item())
+                        class_name = result.names.get(cls_id, f"class_{cls_id}")
+                        conf = float(box.conf[0].item())
+                        xyxy = box.xyxy[0].tolist()
+                        x1, y1, x2, y2 = [int(v) for v in xyxy]
+                        cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
+
+                        # Avoid duplicate overlaps
+                        is_duplicate = False
+                        for existing in detections:
+                            ex_bbox = existing["bbox"]
+                            # IoU threshold check
+                            if abs(cx - existing["center"][0]) < 30 and abs(cy - existing["center"][1]) < 30:
+                                is_duplicate = True
+                                break
+
+                        if not is_duplicate:
+                            detections.append({
+                                "class": class_name,
+                                "confidence": round(conf, 2),
+                                "bbox": [x1, y1, x2, y2],
+                                "center": [cx, cy],
+                                "width": x2 - x1,
+                                "height": y2 - y1
+                            })
+
             return detections
         except Exception as e:
             logger.error(f"Error during YOLO detection: {e}")

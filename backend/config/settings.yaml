@@ -12,8 +12,8 @@ camera:
   frame_skip: 1
 
 detection:
-  model_path: "backend/models/yolov8n.pt"
-  confidence: 0.45
+  model_path: "backend/models/wotr_yolov8.pt"
+  confidence: 0.25
   device: "cpu"
   classes:
     - person
@@ -33,8 +33,8 @@ detection:
     - bench
 
 distance:
-  warning_distance: 2.0
-  critical_distance: 1.0
+  warning_distance: 2.5
+  critical_distance: 1.2
   focal_length_px: 500.0 # Standard approximate focal length for 640 width camera
 
 safe_path:

@@ -16,7 +16,7 @@ class SafePathDetector:
 
     def analyze_safe_path(self, enriched_detections: List[Dict[str, Any]],
                          frame_width: int = 640, frame_height: int = 480) -> Dict[str, Any]:
-        """Classify each zone clearance and determine recommended bypass trajectory."""
+        """Classify each corridor zone clearance and determine recommended bypass trajectory."""
         left_bound = frame_width * self.left_ratio
         right_bound = frame_width * (self.left_ratio + self.center_ratio)
 
@@ -24,18 +24,27 @@ class SafePathDetector:
 
         for det in enriched_detections:
             center_x = det.get("center", [frame_width / 2, frame_height / 2])[0]
-            dist = det.get("distance_m", 10.0)
+            bbox = det.get("bbox", [0, 0, 0, 0])
+            x1, x2 = bbox[0] if len(bbox) >= 4 else center_x - 20, bbox[2] if len(bbox) >= 4 else center_x + 20
 
-            # Determine primary zone assignment based on object center
-            if center_x < left_bound:
-                zone = "left"
-            elif center_x < right_bound:
+            in_left = x1 < left_bound or center_x < left_bound
+            in_center = (x1 < right_bound and x2 > left_bound) or (left_bound <= center_x < right_bound)
+            in_right = x2 > right_bound or center_x >= right_bound
+
+            if in_center:
                 zone = "center"
+            elif in_left:
+                zone = "left"
             else:
                 zone = "right"
 
             det["zone"] = zone
-            zone_obstacles[zone].append(det)
+            if in_left:
+                zone_obstacles["left"].append(det)
+            if in_center:
+                zone_obstacles["center"].append(det)
+            if in_right:
+                zone_obstacles["right"].append(det)
 
         # Assess risk status per zone
         zone_status = {}
@@ -71,8 +80,7 @@ class SafePathDetector:
                 recommended_direction = "PROCEED WITH CAUTION"
 
         # Identify nearest obstacle
-        all_obstacles = enriched_detections
-        nearest_obstacle = min(all_obstacles, key=lambda x: x.get("distance_m", 99.0)) if all_obstacles else None
+        nearest_obstacle = min(enriched_detections, key=lambda x: x.get("distance_m", 99.0)) if enriched_detections else None
 
         return {
             "zones": zone_status,

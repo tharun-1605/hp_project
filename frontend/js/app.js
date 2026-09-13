@@ -5,7 +5,8 @@
 let socket = null;
 let synth = window.speechSynthesis;
 let recognition = null;
-let lastSpokenInstruction = "";
+let lastSpokenNormalized = "";
+let lastSpokenTime = 0;
 
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -47,9 +48,18 @@ function updateDashboardUI(data) {
     const instr = data.decision.instruction || "System Ready";
     document.getElementById("activeInstruction").innerText = instr;
 
-    if (synth && instr !== lastSpokenInstruction) {
-      speakBrowserAudio(instr);
-      lastSpokenInstruction = instr;
+    const lowerInstr = instr.toLowerCase();
+    const isIdleInstr = lowerInstr.includes("system ready") || lowerInstr.includes("no active");
+    const normalized = instr.replace(/[\d.]+/g, "#").trim();
+    const now = Date.now();
+
+    // Auto-speak instructions ONLY if it's an active hazard/navigation guidance and not repeated within 5s
+    if (synth && !isIdleInstr) {
+      if (normalized !== lastSpokenNormalized || (now - lastSpokenTime) > 5000) {
+        speakBrowserAudio(instr);
+        lastSpokenNormalized = normalized;
+        lastSpokenTime = now;
+      }
     }
   }
 
@@ -94,16 +104,13 @@ function updateDashboardUI(data) {
 function updateCorridorBox(elementId, label, status) {
   const el = document.getElementById(elementId);
   if (!el) return;
-  el.innerText = `${label}: ${status}`;
+  const icon = label === "LEFT" ? "◄" : (label === "RIGHT" ? "►" : "▲");
+  el.innerText = `${icon} ${label}: ${status}`;
+  el.className = "corridor-box";
   if (status === "BLOCKED") {
-    el.style.borderColor = "var(--accent-red)";
-    el.style.color = "var(--accent-red)";
+    el.classList.add("corridor-blocked");
   } else if (status === "PARTIALLY BLOCKED") {
-    el.style.borderColor = "var(--accent-yellow)";
-    el.style.color = "var(--accent-yellow)";
-  } else {
-    el.style.borderColor = "var(--accent-green)";
-    el.style.color = "var(--accent-green)";
+    el.classList.add("corridor-warning");
   }
 }
 
@@ -112,18 +119,26 @@ function renderObjectsList(detections) {
   document.getElementById("objCount").innerText = detections.length;
 
   if (!detections || detections.length === 0) {
-    listEl.innerHTML = '<li class="empty-msg">No objects detected nearby.</li>';
+    listEl.innerHTML = '<li class="empty-msg">No obstacles detected in visual field.</li>';
     return;
   }
 
-  listEl.innerHTML = detections.map(d => `
-    <li>
-      <span><strong>${d.class.toUpperCase()}</strong> (${d.zone || 'center'})</span>
-      <span style="color: ${d.distance_m <= 1.0 ? 'var(--accent-red)' : 'var(--accent-yellow)'}">
-        ${d.distance_m} meters
-      </span>
-    </li>
-  `).join('');
+  listEl.innerHTML = detections.map(d => {
+    const distClass = d.distance_m <= 1.0 ? 'dist-close' : (d.distance_m <= 2.5 ? 'dist-medium' : 'dist-safe');
+    const trackBadge = d.track_id ? `TRK-${d.track_id}` : '';
+    const motionTag = d.motion_state && d.motion_state !== 'STATIONARY' ? ` • ${d.motion_state}` : '';
+    return `
+      <li class="object-card">
+        <div class="obj-info">
+          <span class="obj-class">${d.class} <small style="color: var(--cyan-neon); opacity: 0.8;">${trackBadge}</small></span>
+          <span style="color: var(--text-muted); font-size: 0.78rem;">(${d.zone || 'center'}${motionTag})</span>
+        </div>
+        <span class="obj-distance ${distClass}">
+          ${d.distance_m}m
+        </span>
+      </li>
+    `;
+  }).join('');
 }
 
 let selectedMaleVoice = null;

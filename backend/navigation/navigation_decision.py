@@ -24,6 +24,8 @@ class NavigationDecisionEngine:
         self.state = NavigationState.IDLE
         self.last_spoken_instruction = ""
         self.destination_name = ""
+        self._last_primary_obs = None
+        self._obs_drop_count = 0
 
     def process_decision(self, route_status: Dict[str, Any],
                          safe_path_analysis: Dict[str, Any],
@@ -33,6 +35,17 @@ class NavigationDecisionEngine:
         risk_level = risk_analysis.get("level", "LOW")
         rec_dir = safe_path_analysis.get("recommended_direction", "STRAIGHT")
         primary_obs = safe_path_analysis.get("primary_obstacle")
+
+        # Hysteresis smoothing for obstacle detection to prevent 1-frame drop flickering
+        if not primary_obs and self._last_primary_obs and self._obs_drop_count < 3:
+            self._obs_drop_count += 1
+            primary_obs = self._last_primary_obs
+        elif primary_obs:
+            self._last_primary_obs = primary_obs
+            self._obs_drop_count = 0
+        else:
+            self._last_primary_obs = None
+            self._obs_drop_count = 0
 
         # 1. State check: Destination reached
         if route_status.get("has_reached_destination"):
@@ -57,7 +70,7 @@ class NavigationDecisionEngine:
             )
 
         # 3. Priority 1: CRITICAL OBSTACLE (Immediate Stop)
-        if risk_level == "CRITICAL":
+        if risk_level == "CRITICAL" or (primary_obs and primary_obs.get("distance_m", 10.0) <= 1.2):
             self.state = NavigationState.OBSTACLE_DETECTED
             obs_name = primary_obs.get("class", "obstacle") if primary_obs else "obstacle"
             dist = primary_obs.get("distance_m", 0.8) if primary_obs else 0.8
@@ -70,18 +83,20 @@ class NavigationDecisionEngine:
             )
 
         # 4. Priority 2: HIGH RISK OBSTACLE & SAFE PATH CORRECTION
-        if risk_level == "HIGH" or rec_dir in ["MOVE LEFT", "MOVE RIGHT", "SLIGHT LEFT", "SLIGHT RIGHT"]:
+        if risk_level == "HIGH" or rec_dir in ["MOVE LEFT", "MOVE RIGHT", "SLIGHT LEFT", "SLIGHT RIGHT"] or (primary_obs and primary_obs.get("distance_m", 10.0) <= 2.5):
             self.state = NavigationState.PATH_CORRECTION
+            obs_name = primary_obs.get("class", "obstacle") if primary_obs else "obstacle"
+            dist = primary_obs.get("distance_m", 1.8) if primary_obs else 1.8
             if rec_dir == "MOVE LEFT":
-                instruction = "Obstacle ahead. Move slightly to your left."
+                instruction = f"{obs_name.capitalize()} ahead at {dist} meters. Move slightly left."
             elif rec_dir == "MOVE RIGHT":
-                instruction = "Obstacle ahead. Move slightly to your right."
+                instruction = f"{obs_name.capitalize()} ahead at {dist} meters. Move slightly right."
             elif rec_dir == "SLIGHT LEFT":
-                instruction = "Approaching obstacle. Bear slightly left."
+                instruction = f"Approaching {obs_name} at {dist} meters. Bear slightly left."
             elif rec_dir == "SLIGHT RIGHT":
-                instruction = "Approaching obstacle. Bear slightly right."
+                instruction = f"Approaching {obs_name} at {dist} meters. Bear slightly right."
             else:
-                instruction = f"Caution. {risk_analysis.get('reason', 'Obstacle ahead.')}"
+                instruction = f"Caution. {obs_name.capitalize()} ahead at {dist} meters."
 
             return self._build_decision_output(
                 priority="HIGH",
@@ -91,14 +106,25 @@ class NavigationDecisionEngine:
                 risk=risk_analysis
             )
 
-        # 5. Priority 3: TURN INSTRUCTION (from route tracker)
+        # 5. Priority 3: MEDIUM RISK / NEARBY OBSTACLE DETECTED
+        if primary_obs and primary_obs.get("distance_m", 10.0) <= 3.5:
+            self.state = NavigationState.OBSTACLE_DETECTED
+            obs_name = primary_obs.get("class", "obstacle")
+            dist = primary_obs.get("distance_m", 2.8)
+            return self._build_decision_output(
+                priority="MEDIUM",
+                instruction=f"Caution: {obs_name.capitalize()} detected ahead at {dist} meters.",
+                action="MONITOR",
+                state=self.state,
+                risk=risk_analysis
+            )
+
+        # 6. Priority 4: TURN INSTRUCTION (from route tracker)
         if route_status.get("is_active"):
             dist_to_turn = route_status.get("distance_to_next_turn", 100.0)
             route_instr = route_status.get("current_instruction", "Walk straight")
 
-            # Impending turn alert within 20 meters
             if dist_to_turn <= 20.0 and dist_to_turn > 5.0:
-                # Quantize distance to nearest 5 meters (e.g. 20m, 15m, 10m) so it speaks once per 5m threshold
                 dist_quantized = int(round(dist_to_turn / 5.0) * 5)
                 if "Turn" in route_instr or "Bear" in route_instr:
                     instruction = f"{route_instr} in {dist_quantized} meters."
@@ -110,7 +136,6 @@ class NavigationDecisionEngine:
                 else:
                     instruction = route_instr
             else:
-                # Stable walking instruction along current route leg (no rapid distance changes)
                 if "Turn" in route_instr or "Bear" in route_instr:
                     instruction = f"Walk straight. {route_instr} ahead."
                 else:
@@ -125,7 +150,7 @@ class NavigationDecisionEngine:
                 risk=risk_analysis
             )
 
-        # 6. Default IDLE state
+        # 7. Default IDLE state
         self.state = NavigationState.IDLE
         return self._build_decision_output(
             priority="LOW",
