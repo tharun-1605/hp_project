@@ -130,6 +130,34 @@ http://localhost:8000
 
 ---
 
+## Dataset Loading & Model Training
+
+VisionNav includes complete tools for generating sample datasets, loading real outdoor obstacle datasets (Pascal VOC / WOTR format), converting annotations, and fine-tuning custom YOLOv8 models.
+
+### 1. Generate Sample Synthetic Dataset
+To quickly test the dataset & training pipeline:
+```bash
+python scripts/generate_sample_wotr_dataset.py
+```
+
+### 2. Load Real WOTR / Custom Dataset
+Place images into `data/wotr/JPEGImages/` and Pascal VOC XML files into `data/wotr/Annotations/`.
+
+### 3. Convert VOC XML Annotations & Train YOLOv8
+Convert annotations to YOLO format and start fine-tuning:
+```bash
+python scripts/convert_wotr_voc_to_yolo.py
+```
+Or run the dedicated trainer script directly:
+```bash
+python scripts/train_wotr.py
+```
+Trained weights will be saved to `backend/models/wotr_yolov8.pt` and automatically loaded by the VisionNav backend.
+
+For full step-by-step instructions, see the detailed [Dataset & Training Guide](file:///media/tharun/App/hp_project/DATASET_TRAINING.md).
+
+---
+
 ## Automated Unit Testing
 
 Execute the complete test suite:
