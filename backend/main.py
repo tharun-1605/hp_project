@@ -35,6 +35,7 @@ from backend.navigation.navigation_decision import NavigationDecisionEngine, Nav
 from backend.voice.speech_recognition import SpeechRecognizer
 from backend.voice.command_processor import CommandProcessor
 from backend.voice.voice_manager import VoiceManager
+from backend.utils.discovery_service import discovery_server
 
 logger = get_logger("VisionNavMain")
 
@@ -46,10 +47,13 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting VisionNav system in '{current_mode}' mode...")
+    env_port = int(os.getenv("VISIONNAV_PORT", "8000"))
+    discovery_server.start(port=env_port)
     camera_mgr.start()
     voice_mgr.speak("VisionNav system initialized. Ready for navigation.", priority="HIGH")
     yield
     logger.info("Shutting down VisionNav system...")
+    discovery_server.stop()
     camera_mgr.stop()
 
 app = FastAPI(
@@ -122,6 +126,21 @@ def upload_camera_frame(req: FrameUploadRequest):
     if success:
         return {"status": "success", "source": "phone_camera"}
     raise HTTPException(status_code=400, detail="Failed to process camera frame.")
+
+from fastapi import Request
+
+@app.get("/api/discover")
+def discover(request: Request):
+    actual_port = request.url.port or discovery_server.target_port
+    if request.url.port:
+        discovery_server.set_target_port(request.url.port)
+    return {
+        "service": "VisionNav",
+        "status": "online",
+        "name": "VisionNav Backend Server",
+        "version": "1.0.0",
+        "port": actual_port
+    }
 
 @app.get("/api/status")
 def get_status():
@@ -292,7 +311,8 @@ async def websocket_telemetry(websocket: WebSocket):
 
             # Draw bounding boxes & corridors on visual frame for web/mobile UI
             annotated_frame = _annotate_frame(frame, enriched_detections, safe_path_analysis, risk_analysis)
-            _, buffer = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 45])
+            small_frame = cv2.resize(annotated_frame, (320, 240))
+            _, buffer = cv2.imencode(".jpg", small_frame, [cv2.IMWRITE_JPEG_QUALITY, 30])
             frame_b64 = base64.b64encode(buffer).decode("utf-8")
 
             telemetry_packet = {
@@ -310,8 +330,13 @@ async def websocket_telemetry(websocket: WebSocket):
             global latest_telemetry
             latest_telemetry = telemetry_packet
 
-            await websocket.send_json(telemetry_packet)
-            await asyncio.sleep(0.05) # ~15-20 smooth FPS stream
+            try:
+                await websocket.send_json(telemetry_packet)
+            except Exception as send_err:
+                logger.warning(f"WebSocket client write failed: {send_err}")
+                break
+
+            await asyncio.sleep(0.1) # ~10 smooth FPS stream, low network overhead
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected.")
     except Exception as e:
@@ -380,6 +405,8 @@ if __name__ == "__main__":
         return start_port
 
     target_port = find_free_port(8000)
+    os.environ["VISIONNAV_PORT"] = str(target_port)
+    discovery_server.set_target_port(target_port)
     print(f"\n========================================================")
     print(f" VisionNav Server starting on http://localhost:{target_port}")
     print(f"========================================================\n")
