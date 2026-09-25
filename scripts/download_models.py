@@ -29,10 +29,10 @@ def main():
     print("VisionNav Model Setup Script")
     print("=========================================")
 
-    # 1. Download YOLOv8n model weights if missing
-    yolo_dest = MODELS_DIR / "yolov8n.pt"
+    # 1. Download YOLOv8m model weights if missing
+    yolo_dest = MODELS_DIR / "yolov8m.pt"
     if not yolo_dest.exists():
-        yolo_url = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt"
+        yolo_url = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m.pt"
         download_file(yolo_url, yolo_dest)
     else:
         print(f"YOLO model already present: {yolo_dest}")

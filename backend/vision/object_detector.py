@@ -17,7 +17,7 @@ TARGET_CLASSES = {
 
 class ObjectDetector:
     """YOLO Object Detector with modular fallback mechanisms."""
-    def __init__(self, model_path: str = "backend/models/yolov8n.pt", confidence: float = 0.45, device: str = "cpu"):
+    def __init__(self, model_path: str = "backend/models/yolov8m.pt", confidence: float = 0.45, device: str = "cpu"):
         self.model_path = model_path
         self.confidence = confidence
         self.device = device
@@ -30,7 +30,7 @@ class ObjectDetector:
         try:
             from ultralytics import YOLO
             wotr_path = "backend/models/wotr_yolov8.pt"
-            coco_path = "yolov8n.pt"
+            coco_path = "yolov8m.pt"
 
             if os.path.exists(wotr_path):
                 logger.info(f"Loading primary WOTR YOLO model: {wotr_path}")
@@ -39,8 +39,8 @@ class ObjectDetector:
                 logger.info(f"Loading YOLO model: {self.model_path}")
                 self.model = YOLO(self.model_path)
             else:
-                logger.info("Loading default YOLO model: yolov8n.pt")
-                self.model = YOLO("yolov8n.pt")
+                logger.info("Loading default YOLO model: yolov8m.pt")
+                self.model = YOLO("yolov8m.pt")
 
             if os.path.exists(coco_path) and self.model_path != coco_path:
                 logger.info("Loading secondary COCO YOLO model for indoor object detection...")
