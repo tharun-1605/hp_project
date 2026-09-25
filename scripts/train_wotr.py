@@ -58,10 +58,10 @@ def create_dataset_structure(base_dir: str = "data/wotr") -> Path:
 
 def train_yolo_wotr(
     data_yaml: Path,
-    epochs: int = 100,
+    epochs: int = 50,
     imgsz: int = 640,
     batch: int = 16,
-    model_name: str = "yolov8m.pt",
+    model_name: str = "yolov8n.pt",
     output_dir: str = "backend/models",
     device: str = "cpu"
 ):
@@ -97,15 +97,6 @@ def train_yolo_wotr(
         shutil.copy(best_weights, target_weights)
         print(f"Training completed successfully!")
         print(f"Model saved to: {target_weights.resolve()}")
-        
-        # Display the accuracy of the model in numbers
-        if hasattr(results, 'box'):
-            map50 = results.box.map50
-            map50_95 = results.box.map
-            print(f"\n=========================================")
-            print(f"Model Accuracy (mAP@50): {map50 * 100:.2f}%")
-            print(f"Model Accuracy (mAP@50-95): {map50_95 * 100:.2f}%")
-            print(f"=========================================\n")
     else:
         print(f"Training completed. Check results in: {output_dir}/wotr_yolo")
 
@@ -125,4 +116,4 @@ if __name__ == "__main__":
         print("To train on real WOTR dataset, place your dataset images and YOLO annotation .txt files into 'data/wotr/'.")
         print("Run `python scripts/train_wotr.py` to start fine-tuning when ready.")
     else:
-        train_yolo_wotr(data_yaml=yaml_file, epochs=100)
+        train_yolo_wotr(data_yaml=yaml_file, epochs=50)

@@ -103,10 +103,10 @@ yaml_file = create_dataset_structure("data/wotr")
 
 train_yolo_wotr(
     data_yaml=yaml_file,
-    epochs=100,            # Number of training epochs
+    epochs=50,             # Number of training epochs
     imgsz=640,             # Input resolution (640x480)
     batch=16,              # Batch size
-    model_name="yolov8m.pt", # Base weights
+    model_name="yolov8n.pt", # Base weights
     output_dir="backend/models",
     device="cpu"           # Use '0' or 'cuda' for GPU training
 )
@@ -123,7 +123,7 @@ backend/models/wotr_yolov8.pt
 
 Once `backend/models/wotr_yolov8.pt` is generated, the VisionNav backend automatically loads both models during startup:
 1. `wotr_yolov8.pt` (Navigation & obstacle classes)
-2. `yolov8m.pt` (General COCO indoor & outdoor objects)
+2. `yolov8n.pt` (General COCO indoor & outdoor objects)
 
 Test detection performance via pytest:
 ```bash
